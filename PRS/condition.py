@@ -44,13 +44,14 @@ class And(Condition):
         return res
 
     def validate(self, t, f, k, n, closed_form):
+        # print('*'*10)
+        # print(t)
+        # print(f)
         res_lhs = self.lhs.validate(t, f, k, n, closed_form)
         res_rhs = self.rhs.validate(t, f, k, n, closed_form)
         # print(res_lhs, self.lhs)
         # print(res_rhs, self.rhs)
         res = []
-        print(self.lhs, self.rhs)
-        print(res_lhs, res_rhs)
         for _ in t:
             for l, r in zip(res_lhs[:len(t)], res_rhs[:len(t)]):
                 if l[0] and r[0]:

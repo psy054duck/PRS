@@ -22,7 +22,7 @@ int main() {
   l=0;
   while( l < n ) {
 	
-	  if(!(l%2))
+	  if(l%2 == 0)
 	    i = i + 1;
 	  else 
 		  j = j+1;

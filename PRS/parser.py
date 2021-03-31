@@ -44,15 +44,20 @@ def p_initializations(p):
         variables.append(internal_name('constant'))
         p[0] = {}
 
-def p_initialization(p):
-    '''initialization : ID ASSIGN const SEMI'''
+# def p_initialization_1(p):
+#     '''initialization : ID ASSIGN const SEMI'''
+#     variables.append(internal_name(p[1]))
+#     p[0] = {internal_name(p[1]): p[3]}
+
+def p_initialization_1(p):
+    '''initialization : ID ASSIGN expression SEMI'''
     variables.append(internal_name(p[1]))
     p[0] = {internal_name(p[1]): p[3]}
 
-def p_const(p):
-    '''const : NUMBER
-             | ID'''
-    p[0] = p[1]
+# def p_const(p):
+#     '''const : NUMBER
+#              | ID'''
+#     p[0] = p[1]
 
 # def p_statements(p):
 #     '''statements : statement statements

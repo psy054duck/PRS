@@ -11,7 +11,10 @@ def to_PRS(inits, recurrence):
     else:
         for body, cond in zip(*recurrence):
             if isinstance(cond, sp.Eq):
-                res += 'if (%s) {\n%s} else ' % ('%s == %s' % (cond.lhs, cond.rhs), dict2c(body))
+                if isinstance(cond.lhs, sp.Mod):
+                    res += 'if (%s) {\n%s} else ' % ('%s %% %s == %s' % (cond.lhs.args[0], cond.lhs.args[1], cond.rhs), dict2c(body))
+                else:
+                    res += 'if (%s) {\n%s} else ' % ('%s == %s' % (cond.lhs, cond.rhs), dict2c(body))
             else:
                 res += 'if (%s) {\n%s} else ' % (cond, dict2c(body))
         res += '{\n%s}' % dict2c(recurrence[0][-1])

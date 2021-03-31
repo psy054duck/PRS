@@ -29,7 +29,6 @@ def guess_pattern(A, x0, conds, a):
             j_min, pattern = j, candidate
             # TODO it may be improved by an early break, something like 'if j_min < len(pattern): break'
     res = j_min, x[j_min], pattern, seq[len(seq)-j_min:]
-    # print(pattern)
     return res
 
 def _covers(pattern, seq):

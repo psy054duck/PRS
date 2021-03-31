@@ -90,11 +90,13 @@ def p_function_definition_4(p):
                 mapping = {k: sp.Symbol('%s%d' % (k, variables[k])) for k in variables}
                 if name.name == assert_call:
                     z3 += '#'*10 + ' assert ' + '#'*10 + '\n'
-                    z3 += '# s.add(Not(%s))\n' % utils.relation2str(args[0].subs(mapping))
+                    z3 += 's.add(Not(%s))\n' % utils.relation2str(args[0].subs(mapping))
                     z3 += '#'*10 + '########' + '#'*10 + '\n'
             elif utils.is_iteration(statement):
                 PRS_recurrence = utils.to_PRS(values, (statement[1], statement[2]))
+                # print(PRS_recurrence)
                 closed_form, var_order, index, t = solve_str(PRS_recurrence)
+                print('yes')
                 # print(closed_form)
                 bodies, conds = statement[1], statement[2]
                 involved_variables = bodies[0].keys()
@@ -135,6 +137,7 @@ def p_function_definition_4(p):
         z3header += 's = set()\n'
         z3header += 's.add(N >= 0)\n'
         z3header += 'solver = Solver()\n'
+        z3header += 'solver.set("timeout", 600)\n'
         for var, cnt in variables.items():
             for i in range(1, cnt+1):
                 symbol = sp.Symbol('%s%d' % (var, i))
@@ -1081,7 +1084,7 @@ def p_multiplicative_expression_3(p):
 
 def p_multiplicative_expression_4(p):
     'multiplicative_expression : multiplicative_expression MOD cast_expression'
-    pass
+    p[0] = p[1] % p[3]
 
 # cast-expression:
 
@@ -1218,7 +1221,11 @@ def p_argument_expression_list(p):
 def p_constant(p):
     '''constant : ICONST
                | FCONST
-               | CCONST'''
+               | CCONST
+               | ICONST16'''
+    # s = p[1]
+    # if p[1].startswith('0x'):
+    #     s = int
     p[0] = sp.Integer(p[1])
 
 
@@ -1255,7 +1262,8 @@ def test_main():
     # global init_num
     # global tmp_num
     # global variables
-    for path, _, filenames in os.walk('benchmarks/support'):
+    for path, _, filenames in os.walk('benchmarks/experiment/loop-acceleration'):
+    # for path, _, filenames in os.walk('benchmarks/support'):
         for filename in filenames:
             check(os.path.join(path, filename))
     #         init_num = 0
@@ -1268,9 +1276,11 @@ def test_main():
     #                 pass
 
 if __name__ == '__main__':
-    # test_main()
-    with open('benchmarks/support/sum.c') as fp:
-        source = fp.read()
-        parser.parse(source, lexer=clexer.lexer)
-        res = utils.z3query(z3query)
-        print(res)
+    test_main()
+    # with open('benchmarks/support/gsv.c') as fp:
+    # with open('benchmarks/experiment/loop-acceleration/multivar_1-2.c') as fp:
+    # # # # with open('loop/loops-crafted-1/Mono6_1.c') as fp:
+    #     source = fp.read()
+    #     parser.parse(source, lexer=clexer.lexer)
+    #     res = utils.z3query(z3query)
+    #     print(res)

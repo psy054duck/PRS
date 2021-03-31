@@ -20,6 +20,9 @@ def matrix_power(M, n):
         P, jordan_cells = M.jordan_cells()
         for j in jordan_cells:
                 jordan_cell_power(j, n)
+        a = P
+        b = sp.diag(*jordan_cells)
+        c = P.inv()
         return P*sp.diag(*jordan_cells)*P.inv()
 
 def closed_form(A, x0, conds, order, n, bnd=100):
@@ -28,6 +31,7 @@ def closed_form(A, x0, conds, order, n, bnd=100):
     a = 1
     js = [0]
     closed_forms = []
+    start = True
     while a < bnd + 1:
         a += 1
         j, xj, pattern, others = guess_pattern(A, x0, conds, a)
@@ -39,23 +43,46 @@ def closed_form(A, x0, conds, order, n, bnd=100):
         #     res = res.applyfunc(functools.partial(my_simplify, n=n))
         #     closed_forms.append(res)
         # else:
-        if j != 0:
-            res = _closed_form(A, x0, others, n)
-            closed_forms.append(res)
-            js.append(j + js[-1])
         res = _closed_form(A, xj, pattern, n)
+        if j != 0:
+            start_res = _closed_form(A, x0, others, n)
+            ########################### these two lines should have the same output
+            if start:
+                start_res = start_res.subs(n, n - js[-1])
+            else:
+                start_res = start_res.subs(n, n - js[-1] + 1)
+            if start_res.subs(n, 0) != x0 and start:
+                js.append(j + js[-1])
+                closed_forms.append(x0)
+            closed_forms.append(start_res)
+            js.append(j + js[-1])
+        # print('*'*10)
+        # print(js)
+        # print(xj)
+        # print(res)
+        # print(res.subs(n, n - js[-1]))
         res_validate = validate(res, conds, pattern, n)
         res = res.applyfunc(functools.partial(my_simplify, n=n))
+        if res.subs(n, 0) != xj and start:
+            closed_forms.append(xj)
+            res = res.subs(n, n - js[-1])
+            js.append(1 + js[-1])
+        elif start:
+            res = res.subs(n, n - js[-1])
+        else:
+            res = res.subs(n, n - js[-1] + 1)
         closed_forms.append(res)
 
         if all(p[0] for p in res_validate):
-            return js, [closed_forms[0]] + [closed_forms[i].subs(n, n - js[i]) for i in range(1, len(closed_forms))]
+            return js, closed_forms
+            # return js, [closed_forms[0]] + [closed_forms[i].subs(n, n - js[i]) for i in range(1, len(closed_forms))]
             # return j, xj, res.subs(n, n - j)
         else:
             start = min(p[1] for p in res_validate if not p[0])
             x0 = res.subs(n, start)
             a = 1
-            js.append(start + js[-1])
+            js.append(start + 1 + js[-1])
+            start = False
     else:
         return None
 
@@ -69,7 +96,6 @@ def _closed_form(A, x0, pattern, n):
     res = S*matrix_power(m, n)*extended_x0
     res = sp.powsimp(res, force=True)
     res = sp.simplify(res, force=True)
-    # res = S*m**n*extended_x0
     return res
 
 def _selector(k, n):

@@ -23,9 +23,9 @@ int main() {
   l=0;
   while( l < n ) {
 	
-	  if(!(l%3))
+	  if(l%3 == 0)
 	    i = i + 1;
-	  else if(!(l%2)) 
+	  else if(l%2 == 0) 
 		  j = j+1;
 	  else 
 	    k = k+1;

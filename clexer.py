@@ -18,7 +18,7 @@ reserved = (
 tokens = reserved + (
     # Literals (identifier, integer constant, float constant, string constant,
     # char const)
-    'ID', 'TYPEID', 'ICONST', 'FCONST', 'SCONST', 'CCONST',
+    'ID', 'TYPEID', 'ICONST16', 'ICONST', 'FCONST', 'SCONST', 'CCONST',
 
     # Operators (+,-,*,/,%,|,&,~,^,<<,>>, ||, &&, !, <, <=, >, >=, ==, !=)
     'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'MOD',
@@ -125,6 +125,7 @@ for r in reserved:
     reserved_map[r.lower()] = r
 
 
+t_ICONST16 = r'0x(\d|[a-f])+'
 def t_ID(t):
     r'[A-Za-z_][\w_]*'
     t.type = reserved_map.get(t.value, "ID")
@@ -132,6 +133,7 @@ def t_ID(t):
 
 # Integer literal
 t_ICONST = r'\d+([uU]|[lL]|[uU][lL]|[lL][uU])?'
+
 
 # Floating literal
 t_FCONST = r'((\d+)(\.\d+)(e(\+|-)?(\d+))? | (\d+)e(\+|-)?(\d+))([lL]|[fF])?'
