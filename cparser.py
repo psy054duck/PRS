@@ -11,6 +11,7 @@ import sympy as sp
 import utils
 from PRS.prs_solver import solve_str
 import os
+import shutil
 # from condition import PolyCondition, Condition
 
 # Get the token map
@@ -24,6 +25,9 @@ variables = {}
 temp_variables = set()
 assert_call = '__VERIFIER_assert'
 z3query = ''
+tested_filename = ''
+extracted_recurrence_path = 'extracted_recurrence'
+closed_form_solution = 'closed_form_solution'
 
 def p_translation_unit_1(p):
     'translation_unit : external_declaration'
@@ -94,9 +98,12 @@ def p_function_definition_4(p):
                     z3 += '#'*10 + '########' + '#'*10 + '\n'
             elif utils.is_iteration(statement):
                 PRS_recurrence = utils.to_PRS(values, (statement[1], statement[2]))
+                with open(os.path.join(extracted_recurrence_path, os.path.basename(tested_filename)), 'a') as fp:
+                    fp.write(PRS_recurrence)
                 # print(PRS_recurrence)
                 closed_form, var_order, index, t = solve_str(PRS_recurrence)
-                print('yes')
+                with open(os.path.join(closed_form_solution, os.path.basename(tested_filename)), 'a') as fp:
+                    fp.write(str(closed_form))
                 # print(closed_form)
                 bodies, conds = statement[1], statement[2]
                 involved_variables = bodies[0].keys()
@@ -317,7 +324,7 @@ def p_init_declarator_1(p):
 
 def p_init_declarator_2(p):
     'init_declarator : declarator EQUALS initializer'
-    if isinstance(p[3], tuple) and p[3][0].name == '__VERIFIER_nondet_uint':
+    if isinstance(p[3], tuple) and p[3][0].name.startswith('__VERIFIER_nondet_'):
         variables.setdefault(p[1], 0)
         variables[p[1]] += 1
         p[0] = utils.create_assignment(p[1], sp.Symbol('%s%d' % (p[1], variables[p[1]])))
@@ -1122,7 +1129,8 @@ def p_unary_expression_4(p):
         p[0] = p[2]
     elif p[1] == '-':
         p[0] = -p[2]
-
+    elif p[1] == '!':
+        p[0] = sp.Not(p[2])
 
 def p_unary_expression_5(p):
     'unary_expression : SIZEOF unary_expression'
@@ -1221,8 +1229,7 @@ def p_argument_expression_list(p):
 def p_constant(p):
     '''constant : ICONST
                | FCONST
-               | CCONST
-               | ICONST16'''
+               | CCONST'''
     # s = p[1]
     # if p[1].startswith('0x'):
     #     s = int
@@ -1246,6 +1253,8 @@ def check(filename):
     global tmp_num
     global variables
     global temp_variables
+    global tested_filename
+    tested_filename = filename
     init_num = 0
     tmp_num = 0
     variables = {}
@@ -1254,7 +1263,8 @@ def check(filename):
         print(filename + ': ', end='')
         try:
             parser.parse(fp.read(), lexer=clexer.lexer)
-            print(utils.z3query(z3query))
+            print('complete')
+            # print(utils.z3query(z3query))
         except Exception as e:
             print(e)
 
@@ -1262,6 +1272,11 @@ def test_main():
     # global init_num
     # global tmp_num
     # global variables
+    folders = [extracted_recurrence_path, closed_form_solution]
+    for folder in folders:
+        if os.path.exists(folder):
+            shutil.rmtree(folder)
+        os.mkdir(folder)
     for path, _, filenames in os.walk('benchmarks/experiment/loop-acceleration'):
     # for path, _, filenames in os.walk('benchmarks/support'):
         for filename in filenames:
@@ -1278,9 +1293,9 @@ def test_main():
 if __name__ == '__main__':
     test_main()
     # with open('benchmarks/support/gsv.c') as fp:
-    # with open('benchmarks/experiment/loop-acceleration/multivar_1-2.c') as fp:
+    # with open('benchmarks/experiment/loop-acceleration/simple_3-2.c') as fp:
     # # # # with open('loop/loops-crafted-1/Mono6_1.c') as fp:
     #     source = fp.read()
     #     parser.parse(source, lexer=clexer.lexer)
-    #     res = utils.z3query(z3query)
-    #     print(res)
+    #     # res = utils.z3query(z3query)
+    #     # print(res)
