@@ -17,6 +17,14 @@ def to_sympy(e, n):
     """Convert an exponential polynomial in the form of a list of terms into expression"""
     return sum(t[0]*t[1]**n for t in e)
 
+def next_element(A, x0, conds):
+    num_pieces = len(conds)
+    for j in range(num_pieces):
+        if conds[j].evaluate({sp.Symbol('_PRS_x%d' % i): x0[i] for i in range(len(x0))}):
+            return A[j]*x0
+    else:
+        return A[num_pieces]*x0
+
 def cauchy_bnd(e, n):
     if e.is_number:
         return 1

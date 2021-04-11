@@ -1,7 +1,7 @@
 import sympy as sp
 import functools
 from .guess import guess_pattern
-from .utils import my_expand, my_simplify
+from .utils import my_expand, my_simplify, next_element
 from .validation import validate
 from .condition import PolyCondition
 
@@ -29,62 +29,100 @@ def closed_form(A, x0, conds, order, n, bnd=100):
     rename = {order[i]: sp.Symbol('_PRS_x%d' % i) for i in range(len(order))}
     conds = [cond.subs(rename) for cond in conds]
     a = 1
-    js = [0]
+    cs = [0]
     closed_forms = []
     start = True
     while a < bnd + 1:
+        print(x0)
         a += 1
-        j, xj, pattern, others = guess_pattern(A, x0, conds, a)
-        # print(others)
+        c, xc, pattern, others = guess_pattern(A, x0, conds, 2*a)
         if pattern is None: continue
+        if c != 0:
+            res = _closed_form(A, x0, others, n)
+            res = res.applyfunc(functools.partial(my_simplify, n=n))
+            if res.subs(n, 0) != x0:
+                cs.append(cs[-1] + 1)
+                closed_forms.append(x0)
+                res = res.subs(n, n + 1)
+            closed_forms.append(res.subs(n, n - cs[-1]))
+            cs.append(cs[-1] + c - 1)
+
+        res = _closed_form(A, xc, pattern, n)
+        res = res.applyfunc(functools.partial(my_simplify, n=n))
+        if res.subs(n, 0) != xc:
+            cs.append(cs[-1] + 1)
+            closed_forms.append(xc)
+            res = res.subs(n, n + 1)
+        res_validate = validate(res, conds, pattern, n)
+        closed_forms.append(res.subs(n, n - cs[-1]))
+        if all(p[0] for p in res_validate):
+            return cs, closed_forms
+        else:
+            start = min(p[1] for p in res_validate if not p[0]) - 1
+            x0 = res.subs(n, start)
+            # x0 = res.subs(n, cs[-1] + start)
+            x0 = next_element(A, x0, conds)
+            cs.append(cs[-1] + start + 1)
+        # if j == 0:
+        #     res = _closed_form(A, xj, pattern, n)
+        #     res_validate = validate(res, conds, pattern, n)
+        #     res = res.applyfunc(functools.partial(my_simplify, n=n))
+        # else:
+        #     res = _closed_form(A, x0, others, n)
+        #     res = res.applyfunc(functools.partial(my_simplify, n=n))
+        #     js.append(js[-1] + j)
+        #     closed_forms.append(res)
+
+        #     res = _closed_form(A, xj, pattern, n)
+        #     res_validate = validate(res, conds, pattern, n)
+        #     res = res.applyfunc(functools.partial(my_simplify, n=n))
+
         # if j == 0:
         #     res = _closed_form(A, xj, pattern, n)
         #     res_validate = validate(res, conds, pattern, n)
         #     res = res.applyfunc(functools.partial(my_simplify, n=n))
         #     closed_forms.append(res)
         # else:
-        res = _closed_form(A, xj, pattern, n)
-        if j != 0:
-            start_res = _closed_form(A, x0, others, n)
-            ########################### these two lines should have the same output
-            if start:
-                start_res = start_res.subs(n, n - js[-1])
-            else:
-                start_res = start_res.subs(n, n - js[-1] + 1)
-            if start_res.subs(n, 0) != x0 and start:
-                js.append(j + js[-1])
-                closed_forms.append(x0)
-            closed_forms.append(start_res)
-            js.append(j + js[-1])
+        # res = _closed_form(A, xj, pattern, n)
+        # original_res = res
+        # if j != 0:
+        #     start_res = _closed_form(A, x0, others, n)
+        #     if start:
+        #         start_res = start_res.subs(n, n - js[-1])
+        #     else:
+        #         start_res = start_res.subs(n, n - js[-1] + 1)
+        #     if start_res.subs(n, 0) != x0 and start:
+        #         js.append(j + js[-1])
+        #         closed_forms.append(x0)
+        #     closed_forms.append(start_res)
+        #     js.append(j + js[-1])
         # print('*'*10)
         # print(js)
         # print(xj)
         # print(res)
         # print(res.subs(n, n - js[-1]))
-        res_validate = validate(res, conds, pattern, n)
-        res = res.applyfunc(functools.partial(my_simplify, n=n))
-        if res.subs(n, 0) != xj and start:
-            closed_forms.append(xj)
-            res = res.subs(n, n - js[-1])
-            js.append(1 + js[-1])
-        elif start:
-            res = res.subs(n, n - js[-1])
-        else:
-            res = res.subs(n, n - js[-1] + 1)
-        closed_forms.append(res)
+    #     res_validate = validate(original_res, conds, pattern, n)
+    #     res = res.applyfunc(functools.partial(my_simplify, n=n))
+    #     if res.subs(n, 0) != xj and start:
+    #         closed_forms.append(xj)
+    #         res = res.subs(n, n - js[-1])
+    #         js.append(1 + js[-1])
+    #     elif start:
+    #         res = res.subs(n, n - js[-1])
+    #     else:
+    #         res = res.subs(n, n - js[-1] + 1)
+    #     closed_forms.append(res)
 
-        if all(p[0] for p in res_validate):
-            return js, closed_forms
-            # return js, [closed_forms[0]] + [closed_forms[i].subs(n, n - js[i]) for i in range(1, len(closed_forms))]
-            # return j, xj, res.subs(n, n - j)
-        else:
-            start = min(p[1] for p in res_validate if not p[0])
-            x0 = res.subs(n, start)
-            a = 1
-            js.append(start + 1 + js[-1])
-            start = False
-    else:
-        return None
+    #     if all(p[0] for p in res_validate):
+    #         return js, closed_forms
+    #     else:
+    #         start = min(p[1] for p in res_validate if not p[0]) + js[-1]
+    #         x0 = res.subs(n, start)
+    #         # a = 1
+    #         js.append(start)
+    #         start = False
+    # else:
+    #     return None
 
 def _closed_form(A, x0, pattern, n):
     dim = A[0].shape[0]

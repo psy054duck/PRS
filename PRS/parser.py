@@ -122,7 +122,7 @@ def p_condition(p):
     '''condition : expression cmpop expression
                  | expression MOD NUMBER EQ NUMBER
                  | TRUE'''
-    if len(p) == 2:
+    if len(p) == 2 and p[1] == 'true':
         p[0] = TrueCondition(True)
     elif p[2] == '>=':
         p[0] = PolyCondition(p[1]-p[3])

@@ -17,6 +17,8 @@ def guess_pattern(A, x0, conds, a):
     return j_min, x_{j_min}, pattern
     '''
     seq, x = _convert2seq(A, x0, conds, a)
+    # print(x0)
+    # print(x)
     # for xi in x:
     #     print(xi)
     j_min = a
@@ -57,6 +59,7 @@ def _convert2seq(A, x0, conds, a):
             res.append(num_pieces)
             x.append(A[num_pieces]*x[-1])
     return list(reversed(res)), x
+
     
 if __name__ == '__main__':
     from rand_instance import generate_linear_instance

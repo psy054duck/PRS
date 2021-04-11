@@ -155,6 +155,10 @@ def t_comment(t):
     r'/\*(.|\n)*?\*/'
     t.lexer.lineno += t.value.count('\n')
 
+def t_comment_one_line(t):
+    r'//(.)*\n'
+    t.lexer.lineno += t.value.count('\n')
+
 # Preprocessor directive (ignored)
 
 

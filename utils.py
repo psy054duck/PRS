@@ -1,6 +1,29 @@
 import sympy as sp
 from importlib import reload
 
+import signal
+import time
+  
+  
+def set_timeout(num, callback):
+  def wrap(func):
+    def handle(signum, frame):
+      raise RuntimeError
+  
+    def to_do(*args, **kwargs):
+      try:
+        signal.signal(signal.SIGALRM, handle)
+        signal.alarm(num)
+        r = func(*args, **kwargs)
+        signal.alarm(0)
+        return r
+      except RuntimeError as e:
+        callback()
+  
+    return to_do
+  
+  return wrap
+
 def to_PRS(inits, recurrence):
     res = ''.join('%s = %s;\n' % (var, inits[var]) for var in inits) + '\n'
     conds = {}

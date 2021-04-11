@@ -12,6 +12,8 @@ import utils
 from PRS.prs_solver import solve_str
 import os
 import shutil
+import csv
+import time
 # from condition import PolyCondition, Condition
 
 # Get the token map
@@ -28,6 +30,9 @@ z3query = ''
 tested_filename = ''
 extracted_recurrence_path = 'extracted_recurrence'
 closed_form_solution = 'closed_form_solution'
+headers = ['filename', 'time', 'average time', 'min time', 'max time']
+stats = []
+experiment = False
 
 def p_translation_unit_1(p):
     'translation_unit : external_declaration'
@@ -98,12 +103,18 @@ def p_function_definition_4(p):
                     z3 += '#'*10 + '########' + '#'*10 + '\n'
             elif utils.is_iteration(statement):
                 PRS_recurrence = utils.to_PRS(values, (statement[1], statement[2]))
-                with open(os.path.join(extracted_recurrence_path, os.path.basename(tested_filename)), 'a') as fp:
-                    fp.write(PRS_recurrence)
+                print(PRS_recurrence)
+                if experiment:
+                    with open(os.path.join(extracted_recurrence_path, os.path.basename(tested_filename)), 'a') as fp:
+                        fp.write(PRS_recurrence)
                 # print(PRS_recurrence)
+                start_time = time.time()
                 closed_form, var_order, index, t = solve_str(PRS_recurrence)
-                with open(os.path.join(closed_form_solution, os.path.basename(tested_filename)), 'a') as fp:
-                    fp.write(str(closed_form))
+                total_time = time.time() - start_time
+                stats.append([tested_filename, total_time, '', '', ''])
+                if experiment:
+                    with open(os.path.join(closed_form_solution, os.path.basename(tested_filename)), 'a') as fp:
+                        fp.write(str(closed_form))
                 # print(closed_form)
                 bodies, conds = statement[1], statement[2]
                 involved_variables = bodies[0].keys()
@@ -156,7 +167,7 @@ def p_function_definition_4(p):
             z3header += '%s = Int("%s")\n' % (var.name, var.name)
         z3 = z3header + z3
         global z3query
-        z3query = z3
+        z3query = z3.replace('~', 'Not')
         # res = utils.z3query(z3)
         # print(res)
 
@@ -953,7 +964,7 @@ def p_logical_and_expression_1(p):
 
 def p_logical_and_expression_2(p):
     'logical_and_expression : logical_and_expression LAND inclusive_or_expression'
-    pass
+    p[0] = sp.And(p[1], p[3])
 
 # inclusive-or-expression:
 
@@ -1173,7 +1184,12 @@ def p_postfix_expression_3(p):
 
 def p_postfix_expression_4(p):
     'postfix_expression : postfix_expression LPAREN RPAREN'
-    p[0] = (p[1], )
+    global tmp_num
+    if p[1].name.startswith('__VERIFIER_nondet_'):
+        p[0] = sp.Symbol('tmp%d' % tmp_num)
+        tmp_num += 1
+    else:
+        p[0] = ('call', p[1])
 
 
 def p_postfix_expression_5(p):
@@ -1248,7 +1264,11 @@ def p_error(p):
 # Build the grammar
 parser = yacc.yacc()
 
-def check(filename):
+def empty_func():
+    print('timeout')
+
+@utils.set_timeout(30, empty_func)
+def check(filename, debug=False):
     global init_num
     global tmp_num
     global variables
@@ -1261,41 +1281,51 @@ def check(filename):
     temp_variables = set()
     with open(filename) as fp:
         print(filename + ': ', end='')
-        try:
+        if not debug:
+            try:
+                parser.parse(fp.read(), lexer=clexer.lexer)
+                print('complete')
+                print(utils.z3query(z3query))
+            except Exception as e:
+                print(e)
+        else:
             parser.parse(fp.read(), lexer=clexer.lexer)
-            print('complete')
-            # print(utils.z3query(z3query))
-        except Exception as e:
-            print(e)
 
 def test_main():
     # global init_num
     # global tmp_num
     # global variables
+    global experiment
+    experiment = True
     folders = [extracted_recurrence_path, closed_form_solution]
     for folder in folders:
         if os.path.exists(folder):
             shutil.rmtree(folder)
         os.mkdir(folder)
-    for path, _, filenames in os.walk('benchmarks/experiment/loop-acceleration'):
-    # for path, _, filenames in os.walk('benchmarks/support'):
+    for path, _, filenames in os.walk('benchmarks/experiment/'):
         for filename in filenames:
             check(os.path.join(path, filename))
-    #         init_num = 0
-    #         tmp_num = 0
-    #         variables = {}
-    #         with open(os.path.join(path, filename)) as fp:
-    #             try:
-    #                 res = parser.parse(fp.read(), lexer=clexer.lexer)
-    #             except:
-    #                 pass
+    times = [row[1] for row in stats]
+    avg = sum(times) / len(times)
+    min_time = min(times)
+    max_time = max(times)
+    stats[0][2] = avg
+    stats[0][3] = min_time
+    stats[0][4] = max_time
+    with open('result.csv', 'w') as fp:
+        f_csv = csv.writer(fp)
+        f_csv.writerow(headers)
+        f_csv.writerows(stats)
+    experiment = False
+    exit(0)
 
 if __name__ == '__main__':
-    test_main()
+    # test_main()
     # with open('benchmarks/support/gsv.c') as fp:
-    # with open('benchmarks/experiment/loop-acceleration/simple_3-2.c') as fp:
-    # # # # with open('loop/loops-crafted-1/Mono6_1.c') as fp:
+    check('benchmarks/experiment/loop-acceleration/simple_1-2.c', debug=False)
+    # with open('benchmarks/experiment/loop-invariants/eq2.c') as fp:
+    # # # with open('loop/loops-crafted-1/Mono6_1.c') as fp:
     #     source = fp.read()
     #     parser.parse(source, lexer=clexer.lexer)
-    #     # res = utils.z3query(z3query)
-    #     # print(res)
+        # res = utils.z3query(z3query)
+        # print(res)
