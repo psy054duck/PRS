@@ -15,7 +15,19 @@ import shutil
 import csv
 import time
 # from condition import PolyCondition, Condition
+from sympy.logic.boolalg import And, Or, Not
+def and_str(self):
+    return 'And(%s)' % ', '.join(str(arg) for arg in self.args)
 
+def or_str(self):
+    return 'Or(%s)' % ', '.join(str(arg) for arg in self.args)
+
+def not_str(self):
+    return 'Not(%s)' % self.args[0]
+
+And.__str__ = and_str
+Or.__str__ = or_str
+Not.__str__ = not_str
 # Get the token map
 tokens = clexer.tokens
 
@@ -25,14 +37,18 @@ init_num = 0
 tmp_num = 0
 variables = {}
 temp_variables = set()
-assert_call = '__VERIFIER_assert'
+temp_variables_type = {}
 z3query = ''
 tested_filename = ''
+exception_path = 'exception'
+standard_path = 'loop'
+queries_path = 'queries'
 extracted_recurrence_path = 'extracted_recurrence'
 closed_form_solution = 'closed_form_solution'
 headers = ['filename', 'time', 'average time', 'min time', 'max time']
 stats = []
 experiment = False
+N_index = 0
 
 def p_translation_unit_1(p):
     'translation_unit : external_declaration'
@@ -76,6 +92,7 @@ def p_function_definition_3(p):
 def p_function_definition_4(p):
     'function_definition : declaration_specifiers declarator compound_statement'
     global variables
+    global N_index
     z3functions = set()
     statements = p[3]
     values = {}
@@ -92,18 +109,40 @@ def p_function_definition_4(p):
                     variables[lhs] += 1
                     mapping = {k: sp.Symbol('%s%d' % (k, variables[k])) for k in variables}
                     z3 += 's.add(%s == %s)\n' % (lhs.subs(mapping, simultaneous=True), rhs.subs(mapping))
+            elif utils.is_assignment(statement):
+                assign = statement
+                # for assign in statement:
+                lhs = utils.get_assignment_lhs(assign)
+                rhs = utils.get_assignment_rhs(assign)
+                rhs = rhs.subs(values, simultaneous=True)
+                values.update({lhs: rhs})
+                variables.setdefault(lhs, 0)
+                variables[lhs] += 1
+                mapping = {k: sp.Symbol('%s%d' % (k, variables[k])) for k in variables}
+                z3 += 's.add(%s == %s)\n' % (lhs.subs(mapping, simultaneous=True), rhs.subs(mapping))
             elif utils.is_selection(statement):
-                pass
+                if utils.is_return(statement[1][0]):
+                    cond = utils.get_selection_cond(statement)
+                    cond = cond.subs(values, simultaneous=True)
+                    z3 += 's.add(%s)\n' % (sp.Not(cond))
+                elif utils.is_assertion(statement[1][0]):
+                    cond = utils.get_selection_cond(statement)
+                    cond = cond.subs(values, simultaneous=True)
+                    _, args = utils.function_name_args(statement[1][0])
+                    mapping = {k: sp.Symbol('%s%d' % (k, variables[k])) for k in variables}
+                    conclusion = utils.relation2str(args[0].subs(mapping))
+                    z3 += 's.add(Not(Or(Not(%s), And(%s, %s))))\n' % (cond, cond, conclusion)
+                    # z3 += 's.add(Implies(%s, Not(%s)))\n' % (cond.subs(values, simultaneous=True), utils.relation2str(args[0].subs(mapping)))
             elif utils.is_function_call(statement):
                 name, args = utils.function_name_args(statement)
                 mapping = {k: sp.Symbol('%s%d' % (k, variables[k])) for k in variables}
-                if name.name == assert_call:
+                if name.name == utils.assert_call:
                     z3 += '#'*10 + ' assert ' + '#'*10 + '\n'
                     z3 += 's.add(Not(%s))\n' % utils.relation2str(args[0].subs(mapping))
                     z3 += '#'*10 + '########' + '#'*10 + '\n'
             elif utils.is_iteration(statement):
-                PRS_recurrence = utils.to_PRS(values, (statement[1], statement[2]))
-                print(PRS_recurrence)
+                assertion = statement[1]
+                PRS_recurrence = utils.to_PRS(values, (statement[2], statement[3]))
                 if experiment:
                     with open(os.path.join(extracted_recurrence_path, os.path.basename(tested_filename)), 'a') as fp:
                         fp.write(PRS_recurrence)
@@ -116,7 +155,7 @@ def p_function_definition_4(p):
                     with open(os.path.join(closed_form_solution, os.path.basename(tested_filename)), 'a') as fp:
                         fp.write(str(closed_form))
                 # print(closed_form)
-                bodies, conds = statement[1], statement[2]
+                bodies, conds = statement[2], statement[3]
                 involved_variables = bodies[0].keys()
                 variables = {var: variables[var] if var not in involved_variables else variables[var]+1 for var in variables}
                 old_mapping = {k: sp.Symbol('%s%d(n)' % (k, variables[k])) for k in variables}
@@ -143,17 +182,25 @@ def p_function_definition_4(p):
                     z3 += 's.add(ForAll(n, Implies(n >= 0, %s%d(n) == %s)))\n' % (var, variables[var], closed_form_str)
                     z3 += '#'*10 + '#############' + '#'*10 + '\n'
                     variables[var] += 1
-                    z3 += 's.add(%s%d == %s%d(N))\n' % (var, variables[var], var, variables[var]-1)
+                    N = 'N%d' % N_index
+                    z3 += 's.add(%s%d == %s%d(%s))\n' % (var, variables[var], var, variables[var]-1, N)
                     values.update({var: sp.Symbol('%s%d' % (var, variables[var]))})
                 cond_mapping = {k: sp.Symbol(('%s%d(n)' if k in involved_variables else '%s%d') % (k, variables[k]-1 if k in involved_variables else variables[k])) for k in variables}
-                z3 += 's.add(ForAll(n, Implies(And(0 <= n, n < N), %s)))\n' % statement[3].subs(cond_mapping)
-                cond_mapping = {k: sp.Symbol(('%s%d(N)' if k in involved_variables else '%s%d') % (k, variables[k]-1 if k in involved_variables else variables[k])) for k in variables}
-                z3 += 's.add(Not(%s))\n' % statement[3].subs(cond_mapping)
+                z3 += 's.add(ForAll(n, Implies(And(0 <= n, n < %s), %s)))\n' % (N, statement[4].subs(cond_mapping))
+                cond_mapping = {k: sp.Symbol(('%%s%%d(%s)' % N if k in involved_variables else '%s%d') % (k, variables[k]-1 if k in involved_variables else variables[k])) for k in variables}
+                z3 += 's.add(Not(%s))\n' % statement[4].subs(cond_mapping)
+                N_index += 1
+                if assertion is not None:
+                    z3 += '#'*10 + ' assertion in loop ' + '#'*10 + '\n'
+                    assert_mapping = {k: sp.Symbol(('%s%d(n+1)' if k in involved_variables else '%s%d') % (k, variables[k]-1 if k in involved_variables else variables[k])) for k in variables}
+                    z3 += 's.add(ForAll(n, Implies(n >= 0, %s)))\n' % assertion.subs(assert_mapping)
         z3header = 'from z3 import *\n'
-        z3header += 'n = Int("n")\n'
-        z3header += 'N = Int("N")\n'
+        z3header += 'from aux_z3 import *\n'
         z3header += 's = set()\n'
-        z3header += 's.add(N >= 0)\n'
+        z3header += 'n = Int("n")\n'
+        for n in range(N_index):
+            z3header += 'N{0} = Int("N{0}")\n'.format(n)
+            z3header += 's.add(N{0} >= 0)\n'.format(n)
         z3header += 'solver = Solver()\n'
         z3header += 'solver.set("timeout", 600)\n'
         for var, cnt in variables.items():
@@ -165,9 +212,12 @@ def p_function_definition_4(p):
                     z3header += '%s = Int("%s")\n' % (symbol, symbol)
         for var in temp_variables:
             z3header += '%s = Int("%s")\n' % (var.name, var.name)
+            if temp_variables_type[var] == 'uint':
+                z3header += 's.add(%s >= 0)\n' % var
         z3 = z3header + z3
         global z3query
-        z3query = z3.replace('~', 'Not')
+        z3query = z3
+        # z3query = z3.replace('~', 'Not')
         # res = utils.z3query(z3)
         # print(res)
 
@@ -256,6 +306,7 @@ def p_type_specifier(p):
                       | struct_or_union_specifier
                       | enum_specifier
                       | TYPEID
+                      | BOOL
                       '''
     pass
 
@@ -322,15 +373,16 @@ def p_init_declarator_list_2(p):
 
 def p_init_declarator_1(p):
     'init_declarator : declarator'
-    global init_num
+    global tmp_num
     if isinstance(p[1], tuple):
         p[0] = None
     elif p[1] is not None:
-        symbol = sp.Symbol('%s%d' % (p[1].name, init_num))
+        symbol = sp.Symbol('tmp%d' % tmp_num)
         p[0] = utils.create_assignment(p[1], symbol)
         # p[0] = ('assip[1], sp.Symbol('%s%d' % (p[1].name, init_num)))
         temp_variables.add(symbol)
-        init_num += 1
+        temp_variables_type[symbol] = 'int'
+        tmp_num += 1
 
 
 def p_init_declarator_2(p):
@@ -338,7 +390,14 @@ def p_init_declarator_2(p):
     if isinstance(p[3], tuple) and p[3][0].name.startswith('__VERIFIER_nondet_'):
         variables.setdefault(p[1], 0)
         variables[p[1]] += 1
-        p[0] = utils.create_assignment(p[1], sp.Symbol('%s%d' % (p[1], variables[p[1]])))
+        temp = sp.Symbol('tmp%d' % tmp_num)
+        temp_variables.add(temp)
+        p[0] = utils.create_assignment(p[1], temp)
+        if p[3][0].name.endswith('uint'):
+            temp_variables_type[temp] = 'uint'
+        else:
+            temp_variables_type[temp] = 'int'
+        tmp_num += 1
     else:
         p[0] = utils.create_assignment(p[1], p[3])
     # p[0] = {p[1]: p[3]}
@@ -761,6 +820,8 @@ def p_statement_list_1(p):
     'statement_list : statement'
     if utils.is_for_iteration(p[1]):
         p[0] = [[p[1][-1]], ('iteration',) + p[1][1:-1]]
+    elif isinstance(p[1], list):
+        p[0] = p[1]
     else:
         p[0] = [p[1]]
 
@@ -781,6 +842,10 @@ def p_selection_statement_1(p):
         statements = [p[5]]
     for statement in statements:
         if utils.is_assignment(statement): # assignment
+            true_branch.append(statement)
+        elif utils.is_return(statement):
+            true_branch.append(statement)
+        elif utils.is_assertion(statement):
             true_branch.append(statement)
         elif isinstance(statement, tuple): # function call
             pass
@@ -826,16 +891,16 @@ def p_selection_statement_3(p):
 
 def p_iteration_statement_1(p):
     'iteration_statement : WHILE LPAREN expression RPAREN statement'
-    _, assignments, loop_guard = utils.analyze_loop(p[3], p[5])
-    p[0] = ('iteration', *assignments, loop_guard)
+    _, assignments, loop_guard, assertion = utils.analyze_loop(p[3], p[5])
+    p[0] = ('iteration', assertion, *assignments, loop_guard)
 
 
 def p_iteration_statement_2(p):
     'iteration_statement : FOR LPAREN expression_opt SEMI expression_opt SEMI expression_opt RPAREN statement '
-    _, assignments, loop_guard = utils.analyze_loop(p[5], p[9])
+    _, assignments, loop_guard, assertion = utils.analyze_loop(p[5], p[9])
     for s in assignments[0]:
         s[utils.get_assignment_lhs(p[7])] = utils.get_assignment_rhs(p[7])
-    p[0] = ('for-iteration', *assignments, loop_guard, p[3])
+    p[0] = ('for-iteration', assertion, *assignments, loop_guard, p[3])
 
 def p_iteration_statement_3(p):
     'iteration_statement : DO statement WHILE LPAREN expression RPAREN SEMI'
@@ -1097,7 +1162,8 @@ def p_multiplicative_expression_2(p):
 
 def p_multiplicative_expression_3(p):
     'multiplicative_expression : multiplicative_expression DIVIDE cast_expression'
-    pass
+    p[0] = p[1] / p[3]
+    # pass
 
 
 def p_multiplicative_expression_4(p):
@@ -1186,8 +1252,14 @@ def p_postfix_expression_4(p):
     'postfix_expression : postfix_expression LPAREN RPAREN'
     global tmp_num
     if p[1].name.startswith('__VERIFIER_nondet_'):
-        p[0] = sp.Symbol('tmp%d' % tmp_num)
+        symbol = sp.Symbol('tmp%d' % tmp_num)
+        temp_variables.add(symbol)
         tmp_num += 1
+        p[0] = symbol
+        if p[1].name.endswith('uint'):
+            temp_variables_type[symbol] = 'uint'
+        else:
+            temp_variables_type[symbol] = 'int'
     else:
         p[0] = ('call', p[1])
 
@@ -1265,31 +1337,63 @@ def p_error(p):
 parser = yacc.yacc()
 
 def empty_func():
-    print('timeout')
+    pass
+    # print('timeout')
 
-@utils.set_timeout(30, empty_func)
+tot = 0
+correct = 0
+unknown = 0
+@utils.set_timeout(5, empty_func)
 def check(filename, debug=False):
     global init_num
     global tmp_num
     global variables
     global temp_variables
     global tested_filename
+    global N_index
+    global correct
+    global tot
+    global unknown
+    global temp_variables_type
+    global z3query
+    # global exception_path
+    # global standard_path
+    # standard_path = 'loop/'
+    z3query = ''
     tested_filename = filename
+    N_index = 0
     init_num = 0
     tmp_num = 0
     variables = {}
     temp_variables = set()
+    temp_variables_type = {}
+    tot += 1
     with open(filename) as fp:
         print(filename + ': ', end='')
         if not debug:
             try:
                 parser.parse(fp.read(), lexer=clexer.lexer)
-                print('complete')
-                print(utils.z3query(z3query))
+                res = utils.z3query(z3query)
+                answer_path = os.path.join(standard_path, os.path.basename(os.path.split(filename)[0]), os.path.basename(filename).replace('.c', '.yml'))
+                answer = utils.read_answer(answer_path)
+                if (answer and str(res) == 'unsat') or (not answer and str(res) == 'sat'):
+                    print('correct')
+                    correct += 1
+                elif str(res) == 'unknown':
+                    print('unknown')
+                    unknown += 1
+                else:
+                    print('wrong')
             except Exception as e:
-                print(e)
+                exception_file = os.path.join(exception_path, os.path.basename(filename))
+                print('unknown')
+                with open(os.path.join(exception_path, os.path.basename(filename)), 'w') as ff:
+                    ff.write(str(e))
         else:
             parser.parse(fp.read(), lexer=clexer.lexer)
+            res = utils.z3query(z3query)
+            print(res)
+        # print('complete')
 
 def test_main():
     # global init_num
@@ -1297,7 +1401,7 @@ def test_main():
     # global variables
     global experiment
     experiment = True
-    folders = [extracted_recurrence_path, closed_form_solution]
+    folders = [extracted_recurrence_path, closed_form_solution, exception_path, queries_path]
     for folder in folders:
         if os.path.exists(folder):
             shutil.rmtree(folder)
@@ -1305,6 +1409,8 @@ def test_main():
     for path, _, filenames in os.walk('benchmarks/experiment/'):
         for filename in filenames:
             check(os.path.join(path, filename))
+            with open(os.path.join(queries_path, filename), 'w') as fp:
+                fp.write(z3query)
     times = [row[1] for row in stats]
     avg = sum(times) / len(times)
     min_time = min(times)
@@ -1317,12 +1423,12 @@ def test_main():
         f_csv.writerow(headers)
         f_csv.writerows(stats)
     experiment = False
-    exit(0)
 
 if __name__ == '__main__':
-    # test_main()
+    test_main()
+    print('%d/%d/%d' % (correct, unknown, tot - correct - unknown))
     # with open('benchmarks/support/gsv.c') as fp:
-    check('benchmarks/experiment/loop-acceleration/simple_1-2.c', debug=False)
+    # check('benchmarks/experiment/loop-acceleration/simple_1-2.c', debug=False)
     # with open('benchmarks/experiment/loop-invariants/eq2.c') as fp:
     # # # with open('loop/loops-crafted-1/Mono6_1.c') as fp:
     #     source = fp.read()

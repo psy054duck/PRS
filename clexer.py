@@ -12,7 +12,7 @@ reserved = (
     'AUTO', 'BREAK', 'CASE', 'CHAR', 'CONST', 'CONTINUE', 'DEFAULT', 'DO', 'DOUBLE',
     'ELSE', 'ENUM', 'EXTERN', 'FLOAT', 'FOR', 'GOTO', 'IF', 'INT', 'LONG', 'REGISTER',
     'RETURN', 'SHORT', 'SIGNED', 'SIZEOF', 'STATIC', 'STRUCT', 'SWITCH', 'TYPEDEF',
-    'UNION', 'UNSIGNED', 'VOID', 'VOLATILE', 'WHILE',
+    'UNION', 'UNSIGNED', 'VOID', 'VOLATILE', 'WHILE', 'BOOL'
 )
 
 tokens = reserved + (
@@ -60,6 +60,7 @@ def t_NEWLINE(t):
     t.lexer.lineno += t.value.count("\n")
 
 # Operators
+t_BOOL = r'_Bool'
 t_PLUS = r'\+'
 t_MINUS = r'-'
 t_TIMES = r'\*'
@@ -123,7 +124,7 @@ t_ELLIPSIS = r'\.\.\.'
 reserved_map = {}
 for r in reserved:
     reserved_map[r.lower()] = r
-
+reserved_map['_Bool'] = 'BOOL'
 
 def t_ID(t):
     r'[A-Za-z_][\w_]*'

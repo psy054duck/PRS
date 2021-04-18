@@ -1,10 +1,12 @@
 import sympy as sp
 from importlib import reload
+import subprocess
 
 import signal
 import time
+import yaml
   
-  
+assert_call = '__VERIFIER_assert'
 def set_timeout(num, callback):
   def wrap(func):
     def handle(signum, frame):
@@ -50,10 +52,17 @@ def z3query(query):
     with open('z3q.py', 'w') as fp:
         fp.write(query)
         fp.write('def query():\n')
-        fp.write('    return solver.check(s)\n')
-    import z3q as q
-    q = reload(q)
-    return q.query()
+        fp.write('    global s\n')
+        fp.write('    solver = Solver()\n')
+        fp.write('    res = solver.check(s)\n')
+        fp.write('    s = set()\n')
+        fp.write('    return res\n')
+        fp.write('print(query())')
+    out = subprocess.check_output(['python', 'z3q.py'])
+    return out.decode().strip()
+    # import z3q as q
+    # q = reload(q)
+    # return q.query()
     
 
 def closed_form2z3(closed_form, order, var, index):
@@ -75,7 +84,10 @@ def closed_form2z3(closed_form, order, var, index):
 
 def analyze_loop(loop_guard, loop_body):
     assignments = [[{}, {}], [sp.true]]
+    it = 0
+    assertion = None
     for statement in loop_body:
+        it += 1
         if is_assignment(statement):
             lhs = get_assignment_lhs(statement)
             rhs = get_assignment_rhs(statement)
@@ -101,6 +113,11 @@ def analyze_loop(loop_guard, loop_body):
                 assignments = new_bodies, new_conds
             else:
                 raise Exception('Only one sequence of if-else is supported now')
+        elif is_assertion(statement) and it == len(loop_body):
+            _, assertion = function_name_args(statement)
+            assertion = assertion[0]
+        # elif is_assertion(statement):
+        #     print(statement)
     involved_variables = set()
     for body in assignments[0]:
         for var in body:
@@ -110,7 +127,30 @@ def analyze_loop(loop_guard, loop_body):
             if var not in body:
                 body[var] = var
 
-    return ('iteration', assignments, loop_guard)
+    return ('iteration', assignments, sp.true if loop_guard == 1 else loop_guard, assertion)
+
+def read_answer(filename):
+    with open(filename) as fp:
+        yml = yaml.load(fp, Loader=yaml.FullLoader)
+    properties = yml['properties']
+    for prop in properties:
+        if 'unreach-call' in prop['property_file'] or 'no-overflow' in prop['property_file']:
+            return prop['expected_verdict']
+    else:
+        print('property not found')
+
+def get_assertion_in_loop(statement):
+    return statement[1]
+
+def is_assertion(statement):
+    name, *args = function_name_args(statement)
+    return name.name == assert_call
+
+def is_return(statement):
+    try:
+        return statement[0] == 'return'
+    except:
+        return False
 
 def is_assignment(statement):
     return statement[0] == 'assignment'
@@ -137,14 +177,18 @@ def function_name_args(statement):
         return (statement[1],)
 
 def relation2str(relation):
+    if isinstance(relation, sp.Eq) and isinstance(relation.lhs, sp.Mod):
+        return '%s == %s' % (relation.lhs, relation.rhs)
     if isinstance(relation, sp.Eq):
         return '%s == %s' % (relation2str(relation.lhs), relation2str(relation.rhs))
     elif isinstance(relation, sp.Ne):
         return '%s != %s' % (relation2str(relation.lhs), relation2str(relation.rhs))
-    elif isinstance(relation, sp.Or):
-        return 'Or(%s, %s)' % (relation2str(relation.args[0]), relation2str(relation.args[1]))
-    elif isinstance(relation, sp.And):
-        return 'And(%s, %s)' % (relation2str(relation.args[0]), relation2str(relation.args[1]))
+    # elif isinstance(relation, sp.Or):
+    #     return 'Or(%s, %s)' % (relation2str(relation.args[0]), relation2str(relation.args[1]))
+    # elif isinstance(relation, sp.And):
+    #     return 'And(%s, %s)' % (relation2str(relation.args[0]), relation2str(relation.args[1]))
+    elif isinstance(relation, sp.Mod):
+        return '%s > 0' % relation
     else:
         return str(relation)
 
@@ -156,6 +200,9 @@ def get_assignment_lhs(assignment):
 
 def get_assignment_rhs(assignment):
     return assignment[2]
+
+def get_selection_cond(selection):
+    return selection[3]
 
 def create_assignment(lhs, rhs):
     return ('assignment', lhs, rhs)
